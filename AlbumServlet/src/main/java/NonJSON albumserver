@@ -1,0 +1,103 @@
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import com.google.gson.Gson;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
+import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import javax.servlet.annotation.MultipartConfig;
+import javax.servlet.annotation.WebServlet;
+import javax.servlet.http.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
+@MultipartConfig
+@WebServlet(name = "albumServlet", value = "/albums")
+public class AlbumServlet extends HttpServlet {
+  private final Gson gson = new Gson();
+  private final DynamoDbClient dynamoDb;
+  private final String tableName = "album"; // Change to your DynamoDB table name
+
+  public AlbumServlet() {
+    // Initialize DynamoDB client
+    this.dynamoDb = DynamoDbClient.builder()
+        .region(Region.US_WEST_2) // Change to your preferred region
+        .credentialsProvider(DefaultCredentialsProvider.create())
+        .build();
+  }
+
+  @Override
+  protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+    // The implementation remains the same as in the previous example.
+    // ...
+  }
+
+  @Override
+  protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+    resp.setContentType("application/json");
+
+    // Generate new albumID
+    String albumID = UUID.randomUUID().toString();
+
+    // Read profile part
+    Part profilePart = req.getPart("profile");
+    BufferedReader reader = new BufferedReader(new InputStreamReader(profilePart.getInputStream(), StandardCharsets.UTF_8));
+    StringBuilder profileContent = new StringBuilder();
+    String line;
+    while ((line = reader.readLine()) != null){
+      profileContent.append(line);
+    }
+    String profileJSON = profileContent.toString();
+
+    // Parse profileJSON to an album object
+    Album newAlbum = gson.fromJson(profileJSON, Album.class);
+
+    // Read image data as byte stream
+    Part imagePart = req.getPart("image");
+    float imageSize = 0;
+    if (imagePart != null){
+      imageSize = imagePart.getSize();
+    } else {
+      resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+      resp.getWriter().write("Image not found");
+      return;
+    }
+
+    try {
+      // Store album data in DynamoDB
+      Map<String, AttributeValue> item = new HashMap<>();
+      item.put("albumID", AttributeValue.builder().s(albumID).build());
+      item.put("artist", AttributeValue.builder().s(newAlbum.getArtist()).build());
+      item.put("title", AttributeValue.builder().s(newAlbum.getTitle()).build());
+      item.put("year", AttributeValue.builder().s(newAlbum.getYear()).build());
+      item.put("imageSize", AttributeValue.builder().n(String.valueOf(imageSize)).build());
+
+      PutItemRequest putRequest = PutItemRequest.builder()
+          .tableName(tableName)
+          .item(item)
+          .build();
+
+      dynamoDb.putItem(putRequest);
+
+      // Create and send JSON response
+      JsonObject jsonResponse = new JsonObject();
+      jsonResponse.addProperty("ID", albumID);
+      jsonResponse.addProperty("imageSize", imageSize);
+      PrintWriter out = resp.getWriter();
+      out.print(gson.toJson(jsonResponse));
+      out.flush();
+
+    } catch (DynamoDbException e) {
+      e.printStackTrace();
+      resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+    }
+  }
+}
