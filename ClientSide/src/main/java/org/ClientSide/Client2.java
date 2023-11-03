@@ -64,9 +64,13 @@ public class Client2 {
     while (!successfulRequest && retryCount < 5) {
       try {
         if ("GET".equals(requestType)) {
-          statusCode = requestHandler.sendGetRequest("1");
+          //statusCode = requestHandler.sendGetRequest("1");
+          String albumID = requestHandler.getLastAlbumID();
+          if (albumID != null) {
+            statusCode = requestHandler.sendGetRequest(albumID);
+          }
         } else if ("POST".equals(requestType)) {
-          statusCode = requestHandler.sendPostRequest("Sex Pistols", "Never Mind The Bollocks!", "1977", imageFile);
+          statusCode = requestHandler.sendPostRequest("Rock Pistols", "Never Mind The Bollocks!", "1977", imageFile);
         }
         successfulRequest = true;
 
@@ -197,7 +201,11 @@ public class Client2 {
     long endTime = System.currentTimeMillis();
     long wallTime = (endTime - startTime) / 1000;
     System.out.println(totalRequests);
-    double throughput = (double) totalRequests.get() / wallTime;
+    int expectedRequestCount = numThreadGroups * threadGroupSize *updatedAPICalls *2;
+    int failedRequests = totalRequests.get() - expectedRequestCount;
+    int successRequest = expectedRequestCount - failedRequests;
+    System.out.println("Successful requests: " + successRequest + " Failed Requests: " + failedRequests);
+    double throughput = (double) successRequest / wallTime;
 
     writeToCSV("records.csv");
     System.out.println("\nWall Time: " + wallTime + " seconds");
